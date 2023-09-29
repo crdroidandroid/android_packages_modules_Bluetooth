@@ -208,12 +208,22 @@ public class ContextMap<C, T> {
     /** Internal list of connected devices **/
     private Set<Connection> mConnections = new HashSet<Connection>();
 
-    /**
-     * Add an entry to the application context list.
-     */
-    App add(UUID uuid, WorkSource workSource, C callback, T info, GattService service) {
-        int appUid = Binder.getCallingUid();
-        String appName = service.getPackageManager().getNameForUid(appUid);
+    /** Add an entry to the application context list. */
+    App add(
+            UUID uuid,
+            WorkSource workSource,
+            C callback,
+            GattService.PendingIntentInfo piInfo,
+            GattService service) {
+        int appUid;
+        String appName = null;
+        if (piInfo != null) {
+            appUid = piInfo.callingUid;
+            appName = piInfo.callingPackage;
+        } else {
+            appUid = Binder.getCallingUid();
+            appName = service.getPackageManager().getNameForUid(appUid);
+        }
         if (appName == null) {
             // Assign an app name if one isn't found
             appName = "Unknown App (UID: " + appUid + ")";
@@ -224,7 +234,7 @@ public class ContextMap<C, T> {
                 appScanStats = new AppScanStats(appName, workSource, this, service);
                 mAppScanStats.put(appUid, appScanStats);
             }
-            App app = new App(uuid, callback, info, appName, appScanStats);
+            App app = new App(uuid, callback, (T) piInfo, appName, appScanStats);
             mApps.add(app);
             appScanStats.isRegistered = true;
             return app;
