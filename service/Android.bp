@@ -78,6 +78,7 @@ java_library {
         "bluetooth-nano-protos",
         "bluetooth-proto-enums-java-gen",
         "modules-utils-shell-command-handler",
+        "modules-utils-handlerexecutor",
     ],
 }
 

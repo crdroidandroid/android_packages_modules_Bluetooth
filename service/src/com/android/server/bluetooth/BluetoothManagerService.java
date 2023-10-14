@@ -97,6 +97,7 @@ import android.util.proto.ProtoOutputStream;
 import com.android.bluetooth.BluetoothStatsLog;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.modules.utils.HandlerExecutor;
 import com.android.modules.utils.SynchronousResultReceiver;
 import com.android.server.BluetoothManagerServiceDumpProto;
 
@@ -789,7 +790,7 @@ public class BluetoothManagerService extends IBluetoothManager.Stub {
         if (bluetoothTimeoutMillis != 0) {
             final long timeout = SystemClock.elapsedRealtime() + bluetoothTimeoutMillis;
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, timeout,
-                    TAG, mHandler, mBluetoothTimeoutListener);
+                    TAG, new HandlerExecutor(mHandler), null, mBluetoothTimeoutListener);
         }
     }
 
