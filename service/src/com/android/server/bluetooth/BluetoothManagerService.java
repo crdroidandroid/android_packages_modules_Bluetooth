@@ -1853,8 +1853,11 @@ public class BluetoothManagerService extends IBluetoothManager.Stub {
                     .getResourcesForApplication(btPackageName);
             int apmEnhancement = resources.getIdentifier("config_bluetooth_apm_enhancement_enabled",
                     "bool", btPackageName);
-            Settings.Global.putInt(mContext.getContentResolver(),
-                    APM_ENHANCEMENT, resources.getBoolean(apmEnhancement) ? 1 : 0);
+            ContentResolver resolver = mContext.getContentResolver();
+            // only set if it's not set already - allows user control
+            int value = Settings.Global.getInt(resolver, APM_ENHANCEMENT,
+                    resources.getBoolean(apmEnhancement) ? 1 : 0);
+            Settings.Global.putInt(resolver, APM_ENHANCEMENT, value);
         } catch (Exception e) {
             Log.e(TAG, "Unable to set whether APM enhancement should be enabled");
         }
