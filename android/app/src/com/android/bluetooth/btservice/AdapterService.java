@@ -50,6 +50,8 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.RequiresPermission;
 import android.annotation.SuppressLint;
+import android.app.AlarmManager;
+import android.app.AlarmManager.OnAlarmListener;
 import android.app.AppOpsManager;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -85,10 +87,13 @@ import android.bluetooth.OobData;
 import android.bluetooth.UidTraffic;
 import android.companion.CompanionDeviceManager;
 import android.content.AttributionSource;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.database.ContentObserver;
 import android.hardware.devicestate.DeviceStateManager;
 import android.hardware.display.DisplayManager;
 import android.os.AsyncTask;
@@ -164,6 +169,7 @@ import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.BackgroundThread;
 import com.android.modules.utils.BytesMatcher;
+import com.android.modules.utils.HandlerExecutor;
 
 import java.io.File;
 import java.io.FileDescriptor;
@@ -230,6 +236,9 @@ public class AdapterService extends Service {
                     BluetoothProperties.snoop_log_filter_profile_map_values.EMPTY;
 
     private static AdapterService sAdapterService;
+
+    // Settings.Global.BLUETOOTH_OFF_TIMEOUT
+    private static final String BLUETOOTH_OFF_TIMEOUT = "bluetooth_off_timeout";
 
     private final Object mEnergyInfoLock = new Object();
     private final SparseArray<UidTraffic> mUidTraffic = new SparseArray<>();
@@ -306,6 +315,7 @@ public class AdapterService extends Service {
     final List<Pair<Integer, BluetoothDevice>> mLeGattClientsControllingAutoActiveMode =
             new ArrayList<>();
 
+    private Context mContext;
     private BluetoothAdapter mAdapter;
     private AdapterProperties mAdapterProperties;
     private AdapterState mAdapterStateMachine;
@@ -384,6 +394,35 @@ public class AdapterService extends Service {
                 null);
     }
 
+    private final BroadcastReceiver mReceiver =
+            new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    String action = intent.getAction();
+                    if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)
+                        || BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED.equals(action)) {
+                        setBluetoothTimeout();
+                    }
+                }
+            };
+
+    private final OnAlarmListener mBluetoothTimeoutListener = new OnAlarmListener() {
+        @Override
+        public void onAlarm() {
+            // Fetch adapter connection state synchronously and assume disconnected on error
+            if (mAdapter == null) return;
+            int adapterConnectionState = mAdapter.getConnectionState();
+
+            if (getState() == BluetoothAdapter.STATE_ON
+                && adapterConnectionState == BluetoothAdapter.STATE_DISCONNECTED) {
+                Log.i(TAG, "BT timeout, turning off adapter");
+                mHandler.post(() -> {
+                    mAdapterStateMachine.sendMessage(AdapterState.USER_TURN_OFF);
+                });
+            }
+        }
+    };
+
     @VisibleForTesting
     AdapterService(
             Looper looper,
@@ -440,6 +479,19 @@ public class AdapterService extends Service {
         mServiceFactory = new ServiceFactory();
         mSilenceDeviceManager = new SilenceDeviceManager(this, mServiceFactory, mLooper);
         mDatabaseManager = new DatabaseManager(this);
+    }
+
+    private void setBluetoothTimeout() {
+        if (mContext == null) return;
+        long bluetoothTimeoutMillis = Settings.Global.getLong(mContext.getContentResolver(),
+            BLUETOOTH_OFF_TIMEOUT, 0);
+        AlarmManager alarmManager = requireNonNull(getSystemService(AlarmManager.class));
+        alarmManager.cancel(mBluetoothTimeoutListener);
+        if (bluetoothTimeoutMillis != 0) {
+            final long timeout = SystemClock.elapsedRealtime() + bluetoothTimeoutMillis;
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, timeout,
+                TAG, new HandlerExecutor(mHandler), null, mBluetoothTimeoutListener);
+        }
     }
 
     @Deprecated // Do not expand this method usage and use injection pattern when needed.
@@ -628,6 +680,7 @@ public class AdapterService extends Service {
             return;
         }
 
+        mContext = this;
         mRemoteDevices = new RemoteDevices(this, mLooper);
         mAdapterProperties = new AdapterProperties(this, mRemoteDevices, mLooper);
         mAdapterStateMachine = new AdapterState(this, mLooper);
@@ -637,7 +690,23 @@ public class AdapterService extends Service {
         mBatteryStatsManager = requireNonNull(getSystemService(BatteryStatsManager.class));
         mCompanionDeviceManager = requireNonNull(getSystemService(CompanionDeviceManager.class));
         setAdapterService(this);
+
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED);
+        filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+        mContext.registerReceiver(mReceiver, filter, null, mHandler);
+
+        mContext.getContentResolver().registerContentObserver(Settings.Global.getUriFor(
+                BLUETOOTH_OFF_TIMEOUT), false, mBtTimeoutObserver);
     }
+
+    private final ContentObserver mBtTimeoutObserver =
+            new ContentObserver(null) {
+                @Override
+                public void onChange(boolean selfChange) {
+                    setBluetoothTimeout();
+                }
+            };
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -1366,6 +1435,10 @@ public class AdapterService extends Service {
         }
 
         mDatabaseManager.cleanup();
+
+        mContext.unregisterReceiver(mReceiver);
+
+        mContext.getContentResolver().unregisterContentObserver(mBtTimeoutObserver);
 
         if (mAdapterStateMachine != null) {
             mAdapterStateMachine.doQuit();
