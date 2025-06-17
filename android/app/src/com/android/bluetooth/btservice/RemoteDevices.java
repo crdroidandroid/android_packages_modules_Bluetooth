@@ -1389,6 +1389,9 @@ public class RemoteDevices {
             if (state == BluetoothAdapter.STATE_ON || state == BluetoothAdapter.STATE_TURNING_ON) {
                 intent = new Intent(BluetoothDevice.ACTION_ACL_CONNECTED);
                 intent.putExtra(BluetoothDevice.EXTRA_TRANSPORT, transportLinkType);
+                if (SystemProperties.getBoolean("ro.config.batteryless", false)) {
+                    intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
+                }
             } else if (state == BluetoothAdapter.STATE_BLE_ON
                     || state == BluetoothAdapter.STATE_BLE_TURNING_ON) {
                 intent = new Intent(BluetoothAdapter.ACTION_BLE_ACL_CONNECTED);
