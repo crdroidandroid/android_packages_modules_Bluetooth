@@ -269,15 +269,8 @@ public class ScanManager {
         sendMessage(MSG_START_BLE_SCAN, client);
     }
 
-    void stopScan(int scannerId) {
-        ScanClient client = mScanNative.getBatchScanClient(scannerId);
-        if (client == null) {
-            client = mScanNative.getRegularScanClient(scannerId);
-        }
-        if (client == null) {
-            client = mScanNative.getSuspendedScanClient(scannerId);
-        }
-        sendMessage(MSG_STOP_BLE_SCAN, client);
+    public void stopScan(int scannerId) {
+        sendMessageWithScannerId(MSG_STOP_BLE_SCAN, scannerId);
     }
 
     void flushBatchScanResults(ScanClient client) {
@@ -296,6 +289,17 @@ public class ScanManager {
         mHandler.obtainMessage(what, client).sendToTarget();
     }
 
+    private void sendMessageWithScannerId(int what, int scannerId) {
+        final ClientHandler handler = mHandler;
+        if (handler == null) {
+            Log.d(TAG, "sendMessage: mHandler is null.");
+            return;
+        }
+        Message message = new Message();
+        message.what = what;
+        message.obj = scannerId;
+        handler.sendMessage(message);
+    }
     private boolean isFilteringSupported() {
         if (mBluetoothAdapterProxy == null) {
             Log.e(TAG, "mBluetoothAdapterProxy is null");
@@ -349,7 +353,15 @@ public class ScanManager {
                     handleStartScan((ScanClient) msg.obj);
                     break;
                 case MSG_STOP_BLE_SCAN:
-                    handleStopScan((ScanClient) msg.obj);
+                    int scannerId = (int) msg.obj;
+                    ScanClient client = mScanNative.getBatchScanClient(scannerId);
+                    if (client == null) {
+                      client = mScanNative.getRegularScanClient(scannerId);
+                    }
+                    if (client == null) {
+                      client = mScanNative.getSuspendedScanClient(scannerId);
+                    }
+                    handleStopScan(client);
                     break;
                 case MSG_FLUSH_BATCH_RESULTS:
                     handleFlushBatchResults((ScanClient) msg.obj);
