@@ -2,16 +2,21 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-aidl_interface {
-    name: "bluetooth_constants",
-    host_supported: true,
-    unstable: true,
+filegroup {
+    name: "bluetooth_constants_aidl",
     srcs: [
         "bluetooth/constants/AudioInputType.aidl",
         "bluetooth/constants/aics/AudioInputStatus.aidl",
         "bluetooth/constants/aics/GainMode.aidl",
         "bluetooth/constants/aics/Mute.aidl",
     ],
+}
+
+aidl_interface {
+    name: "bluetooth_constants",
+    host_supported: true,
+    unstable: true,
+    srcs: [":bluetooth_constants_aidl"],
     backend: {
         java: {
             min_sdk_version: "36",
