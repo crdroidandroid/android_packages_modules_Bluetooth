@@ -679,8 +679,11 @@ bool A2dpCodecs::init() {
       log::info("OPUS codec disabled, updated priority to {}", codec_priority);
     }
 
-    if (!com_android_bluetooth_flags_lhdc_codec_support() &&
-        codec_index == BTAV_A2DP_CODEC_INDEX_SOURCE_LHDCV5) {
+    // No Qualcomm SoC advertises LHDC in the split A2DP feature mask (see
+    // BTM_SPLIT_A2DP_SOURCE_* in btm_vendor_types.h) and PAL has no software encoder to fall
+    // back on, so once LHDCv5 is negotiated configure_a2dp_encoder_format() rejects it and
+    // every pal_stream_start() fails with -EINVAL, taking all playback down with it.
+    if (codec_index == BTAV_A2DP_CODEC_INDEX_SOURCE_LHDCV5) {
       codec_priority = BTAV_A2DP_CODEC_PRIORITY_DISABLED;
       log::info("LHDCv5 codec disabled");
     }
